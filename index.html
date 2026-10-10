@@ -1310,7 +1310,7 @@ function renderChapter() {
   $('#cr-stats').innerHTML = CREDITS.stats.map(([n, l]) => `<div><strong>${n}</strong><span>${l}</span></div>`).join('');
   $('#cr-roles').innerHTML = CREDITS.roles.map(([k, v]) => `<div class="cr-role"><span class="k">${k}</span><span class="d"></span><span class="v">${v}</span></div>`).join('');
 })();
-let creditsMusic = false, creditsEndT = null;
+let creditsEndT = null;
 function openCredits() {
   closeAll(true);
   document.body.classList.add('no-scroll');
@@ -1320,25 +1320,25 @@ function openCredits() {
   const secs = Math.max(30, (r.offsetHeight + innerHeight) / 55);
   r.style.setProperty('--roll', secs + 's');
   r.classList.add('run');
-  creditsMusic = !musicOn;
   if (!musicOn) musicStart();
 }
 function closeCredits() {
   $('#credits').classList.remove('show');
   $('#cr-roll').classList.remove('run');
   document.body.classList.remove('no-scroll');
-  if (creditsMusic && musicOn) musicStop(); // выключаем музыку, если её включили титры
-  creditsMusic = false;
 }
 $('#cr-close').onclick = closeCredits;
 $('#credits-banner').onclick = openCredits;
 $('#pf-credits').onclick = () => { closeAll(); openCredits(); };
 
 // ═══════════════ МУЗЫКА (фоновая песня) ═══════════════
-const BG_VOL = 0.45; // тихо, чтобы не мешала
+// Песня играет всегда: во время видео только становится тише, а если браузер
+// или телефон её приостановил — возвращается при первой возможности.
+const BG_VOL = 0.45;   // тихо, чтобы не мешала
+const DUCK_VOL = 0.15; // пока играет видео — ещё тише, но не замолкает
 const bgm = new Audio('media/song.mp3');
 bgm.loop = true; bgm.preload = 'none';
-let actx = null, gainNode = null, musicOn = false;
+let actx = null, gainNode = null, musicOn = false, userMuted = false;
 const ducks = new Set();
 function ensureGraph() {
   if (actx) return;
@@ -1350,7 +1350,7 @@ function ensureGraph() {
   } catch (e) { actx = null; gainNode = null; }
 }
 function setLevel(sec) {
-  const v = musicOn && !ducks.size ? BG_VOL : 0;
+  const v = !musicOn ? 0 : ducks.size ? DUCK_VOL : BG_VOL;
   if (gainNode) gainNode.gain.setTargetAtTime(v, actx.currentTime, (sec || 0.6) / 3);
   else bgm.volume = v;
 }
@@ -1358,33 +1358,44 @@ function updateMusicBtn() {
   $('#music-btn').classList.toggle('on', musicOn);
   $('#music-btn').setAttribute('aria-label', musicOn ? 'Выключить музыку' : 'Включить музыку');
 }
+// запускает песню заново, если она стоит или аудио-контекст уснул
+function ensurePlaying() {
+  if (!musicOn) return;
+  if (actx && actx.state !== 'running') actx.resume().catch(() => {});
+  if (bgm.paused) bgm.play().then(() => setLevel(2)).catch(() => {});
+}
 function musicStart() {
   ensureGraph();
-  if (actx) actx.resume();
-  musicOn = true;
+  musicOn = true; userMuted = false;
   if (gainNode) gainNode.gain.value = 0;
-  bgm.play().then(() => setLevel(2)).catch(() => { musicOn = false; updateMusicBtn(); });
   updateMusicBtn();
+  ensurePlaying();
 }
 function musicStop() {
   musicOn = false; setLevel(0.5); updateMusicBtn();
   setTimeout(() => { if (!musicOn) bgm.pause(); }, 700);
 }
+// кнопка ♪ глушит песню только до перезагрузки страницы
 function toggleMusic() {
-  if (musicOn) { musicStop(); store.set('musicOff', true); }
-  else { musicStart(); store.set('musicOff', false); }
+  if (musicOn) { musicStop(); userMuted = true; }
+  else musicStart();
 }
 // приглушаем музыку, пока играет видео
 function duck(key, on) { on ? ducks.add(key) : ducks.delete(key); setLevel(on ? 0.5 : 1.5); }
 $('#music-btn').onclick = toggleMusic;
-// песня включается с первым касанием, если её не выключали
+// любое касание или клавиша: запускаем песню или будим её, если её остановили
 function kickMusic(e) {
   if (e.target.closest && e.target.closest('#music-btn')) return;
-  removeEventListener('pointerdown', kickMusic, true); removeEventListener('keydown', kickMusic, true);
-  if (!musicOn && !store.get('musicOff', false)) musicStart();
+  if (!musicOn && !userMuted) musicStart(); else ensurePlaying();
 }
-addEventListener('pointerdown', kickMusic, true);
-addEventListener('keydown', kickMusic, true);
+['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(t => addEventListener(t, kickMusic, true));
+// система поставила песню на паузу (звонок, другое видео) — пробуем вернуть
+bgm.addEventListener('pause', () => { if (musicOn && !document.hidden && pv.paused) setTimeout(ensurePlaying, 400); });
+pv.addEventListener('pause', ensurePlaying);
+pv.addEventListener('ended', ensurePlaying);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) ensurePlaying(); });
+addEventListener('pageshow', ensurePlaying);
+addEventListener('focus', ensurePlaying);
 
 // ═══════════════ КЛАВИАТУРА ═══════════════
 addEventListener('keydown', e => {
