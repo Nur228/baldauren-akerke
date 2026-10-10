@@ -422,7 +422,6 @@ footer{padding:40px var(--gutter) calc(40px + env(safe-area-inset-bottom,0px));c
     <button data-open="map">Карта любви</button>
   </div>
   <div class="nav-right">
-    <button class="icon-btn" id="music-btn" aria-label="Включить музыку" title="Музыка">♪</button>
     <button class="avatar" data-open="profile" aria-label="Профиль Акерке">А</button>
   </div>
 </nav>
@@ -1288,7 +1287,6 @@ $('#pl-prev').onclick = () => goEp(cur - 1);
 $('#pl-next').onclick = () => cur < EPISODES.length - 1 ? goEp(cur + 1) : toCredits();
 $('#pl-toast-go').onclick = () => cur < EPISODES.length - 1 ? goEp(cur + 1) : toCredits();
 $('#pl-back').onclick = closePlayer;
-document.addEventListener('visibilitychange', () => { if (document.hidden && started && !paused) togglePlay(); });
 
 function renderChapter() {
   const e = EPISODES[cur];
@@ -1338,7 +1336,7 @@ const BG_VOL = 0.45;   // тихо, чтобы не мешала
 const DUCK_VOL = 0.15; // пока играет видео — ещё тише, но не замолкает
 const bgm = new Audio('media/song.mp3');
 bgm.loop = true; bgm.preload = 'none';
-let actx = null, gainNode = null, musicOn = false, userMuted = false;
+let actx = null, gainNode = null, musicOn = false;
 const ducks = new Set();
 function ensureGraph() {
   if (actx) return;
@@ -1354,10 +1352,6 @@ function setLevel(sec) {
   if (gainNode) gainNode.gain.setTargetAtTime(v, actx.currentTime, (sec || 0.6) / 3);
   else bgm.volume = v;
 }
-function updateMusicBtn() {
-  $('#music-btn').classList.toggle('on', musicOn);
-  $('#music-btn').setAttribute('aria-label', musicOn ? 'Выключить музыку' : 'Включить музыку');
-}
 // запускает песню заново, если она стоит или аудио-контекст уснул
 function ensurePlaying() {
   if (!musicOn) return;
@@ -1366,27 +1360,15 @@ function ensurePlaying() {
 }
 function musicStart() {
   ensureGraph();
-  musicOn = true; userMuted = false;
+  musicOn = true;
   if (gainNode) gainNode.gain.value = 0;
-  updateMusicBtn();
   ensurePlaying();
-}
-function musicStop() {
-  musicOn = false; setLevel(0.5); updateMusicBtn();
-  setTimeout(() => { if (!musicOn) bgm.pause(); }, 700);
-}
-// кнопка ♪ глушит песню только до перезагрузки страницы
-function toggleMusic() {
-  if (musicOn) { musicStop(); userMuted = true; }
-  else musicStart();
 }
 // приглушаем музыку, пока играет видео
 function duck(key, on) { on ? ducks.add(key) : ducks.delete(key); setLevel(on ? 0.5 : 1.5); }
-$('#music-btn').onclick = toggleMusic;
 // любое касание или клавиша: запускаем песню или будим её, если её остановили
-function kickMusic(e) {
-  if (e.target.closest && e.target.closest('#music-btn')) return;
-  if (!musicOn && !userMuted) musicStart(); else ensurePlaying();
+function kickMusic() {
+  musicOn ? ensurePlaying() : musicStart();
 }
 ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(t => addEventListener(t, kickMusic, true));
 // система поставила песню на паузу (звонок, другое видео) — пробуем вернуть
